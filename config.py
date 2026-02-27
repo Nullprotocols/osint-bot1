@@ -7,8 +7,8 @@ import os
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
 # ==================== OWNER & ADMINS ====================
-OWNER_ID = 8104850843  # Owner ka Telegram user ID
-INITIAL_ADMINS = [8104850843, 5987905091]  # Ye DB me automatically add honge
+OWNER_ID = 8104850848  # Owner ka Telegram user ID
+INITIAL_ADMINS = [8104850848, 5987905091]  # Ye DB me automatically add honge
 
 # ==================== FORCE JOIN CHANNELS ====================
 FORCE_JOIN_CHANNELS = [
@@ -68,7 +68,7 @@ COMMANDS = {
         "log": LOG_CHANNELS["tg2num"],
         "desc": "Telegram user ID to number (if available)",
         "extra_blacklist": [
-            "code",
+            "April 6, 2026",
             "validity",
             "hours_remaining",
             "days_remaining",
@@ -189,4 +189,5 @@ BRANDING = {
 CMD_LIST_FOOTER = "\n\n────────────────────────────\n⚡ Fast • Accurate • Secure\n👨‍💻 DEVELOPED BY NULL PROTOCOL"
 
 # Redirect bot for private messages
+
 REDIRECT_BOT = "@osintfatherNullBot"
