@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # main.py - Complete OSINT Pro Bot with Flask for Render Web Service
-# Fully updated with two-step /dm and /broadcast, file sending for long output,
-# branding inside JSON and extra footer, formatted command lists, and all admin commands.
+# Fully updated with branding inside JSON and extra footer, plus formatted command list
 
 import os
 import sys
@@ -14,7 +13,6 @@ import logging
 import threading
 import html
 import aiohttp
-import io
 from datetime import datetime
 from flask import Flask, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -35,10 +33,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 flask_app = Flask(__name__)
-
-# ==================== CONSTANTS ====================
-MAX_MESSAGE_LENGTH = 4000
-pending_actions = {}  # user_id -> {"action": "dm" or "broadcast", "target": user_id (for dm)}
 
 # ==================== UTILITY FUNCTIONS ====================
 CACHE_EXPIRY = 300
@@ -101,32 +95,20 @@ def get_copy_button(data):
 def get_search_button(cmd):
     return InlineKeyboardButton("🔍 Search", callback_data=f"search:{cmd}")
 
-async def send_as_file(update: Update, text: str, filename: str, caption: str = None):
-    """Send long text as a file with branding"""
-    branded_text = text + "\n\n━━━━━━━━━━━━━━━━━━━━\n👨‍💻 Developer: @Nullprotocol_X\n⚡ Powered by: NULL PROTOCOL"
-    file_obj = io.BytesIO(branded_text.encode('utf-8'))
-    file_obj.name = filename
-    if not caption:
-        caption = "📁 **Output बहुत लंबा था, इसलिए फाइल में भेज रहा हूँ**\n\nब्रांडिंग फाइल के अंदर भी मौजूद है।"
-    await update.message.reply_document(
-        document=file_obj,
-        filename=filename,
-        caption=caption,
-        parse_mode='Markdown'
-    )
-
 # ==================== COMMAND LIST GENERATORS ====================
 def get_commands_list():
+    """Generate a beautifully formatted list of all available commands."""
     lines = ["📋 **AVAILABLE COMMANDS**", "────────────────────────────"]
     for cmd, info in COMMANDS.items():
         lines.append(f"• `/{cmd} [{info['param']}]` → {info['desc']}")
-    lines.append(CMD_LIST_FOOTER)
+    lines.append(CMD_LIST_FOOTER)  # Uses CMD_LIST_FOOTER from config
     return "\n".join(lines)
 
 def get_admin_commands_list():
+    """Generate a formatted list of all admin/owner commands."""
     admin_cmds = [
-        "`/broadcast` - Broadcast a message to all users (two-step)",
-        "`/dm <user_id>` - Send direct message to a user (two-step)",
+        "`/broadcast <message>` - Send message to all users",
+        "`/dm <user_id> <message>` - Direct message to a user",
         "`/ban <user_id> [reason]` - Ban a user",
         "`/unban <user_id>` - Unban a user",
         "`/deleteuser <user_id>` - Delete user from DB",
@@ -152,6 +134,7 @@ def get_admin_commands_list():
 
 # ==================== FILTERS ====================
 async def group_only(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Allow only groups; private messages redirected unless admin/owner or /start,/help."""
     if update.effective_chat.type == "private":
         if update.message and update.message.text:
             text = update.message.text.strip()
@@ -168,6 +151,7 @@ async def group_only(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
     return True
 
 async def force_join_filter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Check force join (admins/owner bypass)."""
     user = update.effective_user
     if not user:
         return True
@@ -188,107 +172,42 @@ async def force_join_filter(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 # ==================== START & HELP HANDLERS ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /start command."""
     user = update.effective_user
     try:
         await update_user(user.id, user.username, user.first_name, user.last_name)
     except Exception as e:
         logger.error(f"Failed to update user: {e}")
+
     if not await force_join_filter(update, context):
         return
+
     welcome = f"👋 **Welcome {user.first_name}!**\n\n" + get_commands_list()
     await update.message.reply_text(welcome, parse_mode='Markdown')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /help command."""
     user = update.effective_user
     try:
         await update_user(user.id, user.username, user.first_name, user.last_name)
     except Exception as e:
         logger.error(f"Failed to update user: {e}")
+
     if not await force_join_filter(update, context):
         return
+
     await update.message.reply_text(get_commands_list(), parse_mode='Markdown')
 
 async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /admin command - only for admins/owner."""
     user = update.effective_user
     if user.id != OWNER_ID and not await is_admin(user.id):
         await update.message.reply_text("❌ **This command is for admins only.**", parse_mode='Markdown')
         return
+
     await update.message.reply_text(get_admin_commands_list(), parse_mode='Markdown')
 
-# ==================== TWO-STEP DM & BROADCAST ====================
-@admin_only
-async def dm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Initiate a direct message to a user (two-step)."""
-    try:
-        target_user_id = int(context.args[0])
-    except (IndexError, ValueError):
-        await update.message.reply_text("Usage: `/dm <user_id>`", parse_mode='Markdown')
-        return
-
-    admin_id = update.effective_user.id
-    pending_actions[admin_id] = {"action": "dm", "target": target_user_id}
-    await update.message.reply_text(
-        "📨 **अब वह मैसेज भेजें जो आप उस यूजर को भेजना चाहते हैं।**\n\n"
-        "आप कोई भी मैसेज टाइप भेज सकते हैं: टेक्स्ट, फोटो, वीडियो, डॉक्यूमेंट, पोल, वॉइस, आदि।",
-        parse_mode='Markdown'
-    )
-
-@admin_only
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Initiate a broadcast to all users (two-step)."""
-    admin_id = update.effective_user.id
-    pending_actions[admin_id] = {"action": "broadcast"}
-    await update.message.reply_text(
-        "📢 **अब वह मैसेज भेजें जो आप सभी यूजर्स को भेजना चाहते हैं।**\n\n"
-        "आप कोई भी मैसेज टाइप भेज सकते हैं: टेक्स्ट, फोटो, वीडियो, डॉक्यूमेंट, पोल, वॉइस, आदि।",
-        parse_mode='Markdown'
-    )
-
-async def handle_pending_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle non-command messages that are pending for DM or broadcast."""
-    user_id = update.effective_user.id
-    if user_id not in pending_actions:
-        return  # No pending action
-
-    action_data = pending_actions.pop(user_id)  # Remove from pending
-    action = action_data["action"]
-
-    if action == "dm":
-        target_user_id = action_data["target"]
-        try:
-            await context.bot.copy_message(
-                chat_id=target_user_id,
-                from_chat_id=update.effective_chat.id,
-                message_id=update.effective_message.message_id
-            )
-            await update.message.reply_text(f"✅ **Message sent to user `{target_user_id}`**", parse_mode='Markdown')
-        except Exception as e:
-            logger.error(f"Failed to send DM: {e}")
-            await update.message.reply_text(f"❌ **Failed to send message: {e}**", parse_mode='Markdown')
-
-    elif action == "broadcast":
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute('SELECT user_id FROM users') as cursor:
-                users = await cursor.fetchall()
-        success = 0
-        fail = 0
-        for (uid,) in users:
-            try:
-                await context.bot.copy_message(
-                    chat_id=uid,
-                    from_chat_id=update.effective_chat.id,
-                    message_id=update.effective_message.message_id
-                )
-                success += 1
-            except Exception as e:
-                logger.warning(f"Failed to broadcast to {uid}: {e}")
-                fail += 1
-        await update.message.reply_text(
-            f"📢 **Broadcast completed!**\n✅ Success: {success}\n❌ Failed: {fail}",
-            parse_mode='Markdown'
-        )
-
-# ==================== COMMAND HANDLER (with file support) ====================
+# ==================== COMMAND HANDLER (with branding inside JSON + extra footer) ====================
 async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE, cmd: str, query: str):
     cmd_info = COMMANDS.get(cmd)
     if not cmd_info:
@@ -298,7 +217,7 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE, cmd
     url = cmd_info["url"].format(query)
     data = await call_api(url)
 
-    # Add branding to the JSON data
+    # Add branding to the JSON data (inside the JSON)
     if isinstance(data, dict):
         data["developer"] = BRANDING["developer"]
         data["powered_by"] = BRANDING["powered_by"]
@@ -315,26 +234,27 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE, cmd
             "powered_by": BRANDING["powered_by"]
         }
 
+    # Clean branding (remove unwanted text from original API response)
     json_str = json.dumps(data, indent=2, ensure_ascii=False)
     cleaned = clean_branding(json_str, cmd_info.get("extra_blacklist", []))
+    cleaned_escaped = html.escape(cleaned)
 
-    if len(cleaned) <= MAX_MESSAGE_LENGTH:
-        cleaned_escaped = html.escape(cleaned)
-        extra_footer = "\n\n━━━━━━━━━━━━━━━━━━━━\n👨‍💻 **Developer:** @Nullprotocol_X\n⚡ **Powered by:** NULL PROTOCOL"
-        output_html = f"<pre>{cleaned_escaped}</pre>{extra_footer}"
-        keyboard = [[get_copy_button(data), get_search_button(cmd)]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(output_html, parse_mode='HTML', reply_markup=reply_markup)
-    else:
-        filename = f"{cmd}_{query}_{int(time.time())}.json"
-        caption = "📁 **Output बहुत लंबा था, इसलिए फाइल में भेज रहा हूँ**\n\nब्रांडिंग फाइल के अंदर भी मौजूद है।"
-        await send_as_file(update, cleaned, filename, caption)
+    # Extra text footer to be displayed below the JSON
+    extra_footer = "\n\n━━━━━━━━━━━━━━━━━━━━\n👨‍💻 **Developer:** @Nullprotocol_X\n⚡ **Powered by:** NULL PROTOCOL"
+    output_html = f"<pre>{cleaned_escaped}</pre>{extra_footer}"
 
+    keyboard = [[get_copy_button(data), get_search_button(cmd)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(output_html, parse_mode='HTML', reply_markup=reply_markup)
+
+    # Save to DB (with error handling)
     try:
         await save_lookup(update.effective_user.id, cmd, query, data)
     except Exception as e:
         logger.error(f"Failed to save lookup: {e}")
 
+    # Log to channel (with error handling)
     log_text = f"User: {update.effective_user.id}\nQuery: {query}\nCmd: /{cmd}\n\n{json.dumps(data, indent=2)}"
     if len(log_text) > 4000:
         log_text = log_text[:4000] + "..."
@@ -344,13 +264,7 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE, cmd
         logger.error(f"Failed to send log to channel: {e}")
 
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main message handler: checks pending actions first, then processes commands."""
-    # First check if this user has a pending action (DM or broadcast)
-    if update.effective_user.id in pending_actions:
-        await handle_pending_action(update, context)
-        return
-
-    # Apply filters for normal commands
+    """Entry point for all messages (excluding /start, /help, /admin)."""
     if not await group_only(update, context):
         return
     if not await force_join_filter(update, context):
@@ -423,6 +337,33 @@ def owner_only(func):
         if update.effective_user.id == OWNER_ID:
             return await func(update, context)
     return wrapper
+
+@admin_only
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text("Usage: /broadcast <message>")
+    msg = ' '.join(context.args)
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute('SELECT user_id FROM users') as cursor:
+            users = await cursor.fetchall()
+    success, fail = 0, 0
+    for (uid,) in users:
+        try:
+            await context.bot.send_message(chat_id=uid, text=msg)
+            success += 1
+        except:
+            fail += 1
+    await update.message.reply_text(f"✅ Success: {success}\n❌ Fail: {fail}")
+
+@admin_only
+async def dm_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        uid = int(context.args[0])
+        msg = ' '.join(context.args[1:])
+        await context.bot.send_message(chat_id=uid, text=msg)
+        await update.message.reply_text(f"✅ Message sent to {uid}")
+    except (IndexError, ValueError):
+        await update.message.reply_text("Usage: /dm <user_id> <message>")
 
 @admin_only
 async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -568,6 +509,7 @@ async def lookup_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"/{cmd}: {cnt}\n"
     await update.message.reply_text(text)
 
+# ==================== OWNER COMMANDS ====================
 @owner_only
 async def add_admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -616,16 +558,14 @@ def run_bot():
 
         bot_app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
-        # Command handlers
+        # Add command handlers
         bot_app.add_handler(CommandHandler("start", start))
         bot_app.add_handler(CommandHandler("help", help_command))
         bot_app.add_handler(CommandHandler("admin", admin_help))
 
-        # Two-step dm and broadcast
-        bot_app.add_handler(CommandHandler("dm", dm))
-        bot_app.add_handler(CommandHandler("broadcast", broadcast))
-
         # Admin commands
+        bot_app.add_handler(CommandHandler("broadcast", broadcast))
+        bot_app.add_handler(CommandHandler("dm", dm_user))
         bot_app.add_handler(CommandHandler("ban", ban))
         bot_app.add_handler(CommandHandler("unban", unban))
         bot_app.add_handler(CommandHandler("deleteuser", delete_user))
@@ -646,8 +586,8 @@ def run_bot():
         bot_app.add_handler(CommandHandler("settings", settings))
         bot_app.add_handler(CommandHandler("fulldbbackup", full_db_backup))
 
-        # Main message handler (must be last)
-        bot_app.add_handler(MessageHandler(filters.ALL, message_handler))
+        # Main command handler (dynamic)
+        bot_app.add_handler(MessageHandler(filters.COMMAND, message_handler))
         bot_app.add_handler(CallbackQueryHandler(callback_handler))
 
         logger.info("🚀 Bot polling started...")
@@ -680,4 +620,5 @@ def main():
     flask_app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
+
     main()
