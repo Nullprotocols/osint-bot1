@@ -1,4 +1,5 @@
 # config.py - Complete configuration for OSINT Pro Bot on Render
+# Fully updated with branding, command descriptions, and all settings
 
 import os
 
@@ -7,8 +8,8 @@ import os
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
 # ==================== OWNER & ADMINS ====================
-OWNER_ID = 8104850848  # Owner ka Telegram user ID
-INITIAL_ADMINS = [8104850848, 5987905091]  # Ye DB me automatically add honge
+OWNER_ID = 8104850843  # Owner ka Telegram user ID
+INITIAL_ADMINS = [8104850843, 5987905091]  # Ye DB me automatically add honge
 
 # ==================== FORCE JOIN CHANNELS ====================
 FORCE_JOIN_CHANNELS = [
@@ -48,6 +49,12 @@ GLOBAL_BLACKLIST = [
     "Dm to buy access"
 ]
 
+# ==================== BRANDING (for JSON output) ====================
+BRANDING = {
+    "developer": "@Nullprotocol_X",
+    "powered_by": "NULL PROTOCOL"
+}
+
 # ==================== COMMANDS (WITH DESCRIPTIONS) ====================
 COMMANDS = {
     "num": {
@@ -68,7 +75,7 @@ COMMANDS = {
         "log": LOG_CHANNELS["tg2num"],
         "desc": "Telegram user ID to number (if available)",
         "extra_blacklist": [
-            "April 6, 2026",
+            "code",
             "validity",
             "hours_remaining",
             "days_remaining",
@@ -179,15 +186,8 @@ COMMANDS = {
     },
 }
 
-# ==================== BRANDING & FOOTER ====================
-BRANDING = {
-    "developer": "@Nullprotocol_X",
-    "powered_by": "NULL PROTOCOL"
-}
-
-# Footer for command lists (used in /start and /help)
+# ==================== FOOTER FOR COMMAND LISTS (/start, /help) ====================
 CMD_LIST_FOOTER = "\n\n────────────────────────────\n⚡ Fast • Accurate • Secure\n👨‍💻 DEVELOPED BY NULL PROTOCOL"
 
-# Redirect bot for private messages
-
+# ==================== REDIRECT BOT ====================
 REDIRECT_BOT = "@osintfatherNullBot"
