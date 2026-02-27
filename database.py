@@ -221,4 +221,5 @@ async def get_lookup_stats(limit=10):
             'SELECT command, COUNT(*) as cnt FROM lookups GROUP BY command ORDER BY cnt DESC LIMIT ?',
             (limit,)
         ) as cursor:
+
             return await cursor.fetchall()
